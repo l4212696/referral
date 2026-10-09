@@ -1,5 +1,6 @@
 require("dotenv").config();
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 const { Resend } = require("resend");
 const { neon } = require("@neondatabase/serverless");
@@ -18,14 +19,20 @@ const esc = (s) =>
 
 let tableReady;
 function ensureTable() {
-  tableReady ||= sql`
-    CREATE TABLE IF NOT EXISTS referrals (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      referral_code TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`;
+  tableReady ||= (async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS referrals (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        referral_code TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`;
+    await sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS token TEXT`;
+    await sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS message TEXT`;
+    await sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS rating SMALLINT`;
+    await sql`ALTER TABLE referrals ADD COLUMN IF NOT EXISTS message_at TIMESTAMPTZ`;
+  })().catch((err) => { tableReady = null; throw err; });
   return tableReady;
 }
 
@@ -64,11 +71,41 @@ app.post("/api/submit", async (req, res) => {
   }
   try {
     await ensureTable();
-    await sql`INSERT INTO referrals (name, email, referral_code) VALUES (${name}, ${email}, ${code || null})`;
-    res.json({ ok: true });
+    const token = crypto.randomUUID();
+    await sql`INSERT INTO referrals (name, email, referral_code, token) VALUES (${name}, ${email}, ${code || null}, ${token})`;
+    res.json({ ok: true, token });
   } catch (err) {
     console.error("DB error:", err.message);
     res.status(500).json({ error: "Could not save your details. Try again." });
+  }
+});
+
+// Step 3: message / review -> attach to the row created in step 2
+app.post("/api/message", async (req, res) => {
+  const token = String(req.body.token || "");
+  const message = String(req.body.message || "").trim();
+  const rating = req.body.rating == null || req.body.rating === "" ? null : Number(req.body.rating);
+
+  if (!/^[0-9a-f-]{36}$/i.test(token)) {
+    return res.status(400).json({ error: "Your session expired. Start again." });
+  }
+  if (message.length < 2 || message.length > 1000) {
+    return res.status(400).json({ error: "Write a message (up to 1000 characters)." });
+  }
+  if (rating !== null && !(Number.isInteger(rating) && rating >= 1 && rating <= 5)) {
+    return res.status(400).json({ error: "Rating must be 1 to 5." });
+  }
+  try {
+    await ensureTable();
+    const rows = await sql`
+      UPDATE referrals SET message = ${message}, rating = ${rating}, message_at = now()
+      WHERE token = ${token} AND message IS NULL
+      RETURNING id`;
+    if (!rows.length) return res.status(409).json({ error: "This message was already submitted." });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DB error:", err.message);
+    res.status(500).json({ error: "Could not save your message. Try again." });
   }
 });
 
@@ -78,6 +115,6 @@ app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "index.html"
 module.exports = app; // for serverless hosts (e.g. Vercel)
 
 if (require.main === module) {
-  const port = process.env.PORT || 3333;
+  const port = process.env.PORT || 3000;
   app.listen(port, () => console.log(`Referral app on http://localhost:${port}`));
 }
