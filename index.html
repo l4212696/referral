@@ -29,6 +29,17 @@
   button:disabled { opacity: .6; cursor: wait; }
   .msg { min-height: 1.4em; margin-top: 12px; color: var(--err); font-size: .92rem; }
   .done { text-align: center; }
+  textarea { width: 100%; min-height: 130px; padding: 12px 14px; font: inherit; color: inherit; background: transparent;
+             border: 1px solid var(--line); border-radius: 8px; resize: vertical; }
+  textarea:focus { outline: 2px solid var(--green); outline-offset: 1px; }
+  fieldset { border: 0; padding: 0; margin: 14px 0 0; }
+  legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+  .stars { display: flex; gap: 6px; }
+  .stars input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .stars label { margin: 0; font-size: 1.8rem; line-height: 1; cursor: pointer; color: var(--line); }
+  .stars label.on { color: var(--green); }
+  .stars input:focus-visible + label { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 4px; }
+  .count { text-align: right; color: var(--muted); font-size: .85rem; margin-top: 4px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -58,15 +69,31 @@
     </form>
   </section>
 
-  <section id="step3" class="done" hidden>
-    <h1>You're in</h1>
-    <p class="sub">Your details were submitted.</p>
+  <section id="step3" hidden>
+    <h1>Leave a message</h1>
+    <p class="sub">Share a message or review.</p>
+    <form id="messageForm" novalidate>
+      <fieldset>
+        <legend>Rating (optional)</legend>
+        <div class="stars" id="stars"></div>
+      </fieldset>
+      <label for="message">Message</label>
+      <textarea id="message" name="message" maxlength="1000" required></textarea>
+      <div class="count"><span id="count">0</span>/1000</div>
+      <button type="submit">Send message</button>
+      <div class="msg" role="alert"></div>
+    </form>
+  </section>
+
+  <section id="step4" class="done" hidden>
+    <h1>Thank you</h1>
+    <p class="sub">Your message was submitted.</p>
   </section>
 </main>
 
 <script>
   const $ = (id) => document.getElementById(id);
-  let referralCode = "";
+  let referralCode = "", token = "", rating = "";
 
   async function post(url, body) {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -97,8 +124,29 @@
     const name = $("name").value.trim(), email = $("email").value.trim();
     if (!name) throw new Error("Enter your name.");
     if (!email) throw new Error("Enter your email.");
-    await post("/api/submit", { name, email, code: referralCode });
-    $("step2").hidden = true; $("step3").hidden = false;
+    const data = await post("/api/submit", { name, email, code: referralCode });
+    token = data.token;
+    $("step2").hidden = true; $("step3").hidden = false; $("message").focus();
+  });
+
+  // Star rating (optional)
+  const stars = $("stars");
+  for (let i = 1; i <= 5; i++) {
+    stars.insertAdjacentHTML("beforeend",
+      `<input type="radio" name="rating" id="r${i}" value="${i}"><label for="r${i}" title="${i} star${i > 1 ? "s" : ""}">&#9733;</label>`);
+  }
+  stars.addEventListener("change", (e) => {
+    rating = e.target.value;
+    stars.querySelectorAll("label").forEach((l, idx) => l.classList.toggle("on", idx < Number(rating)));
+  });
+
+  $("message").addEventListener("input", (e) => { $("count").textContent = e.target.value.length; });
+
+  wire("messageForm", async () => {
+    const message = $("message").value.trim();
+    if (!message) throw new Error("Write a message.");
+    await post("/api/message", { token, message, rating });
+    $("step3").hidden = true; $("step4").hidden = false;
   });
 </script>
 </body>
