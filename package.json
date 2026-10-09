@@ -1,0 +1,17 @@
+{
+  "name": "referral-app",
+  "version": "1.0.0",
+  "private": true,
+  "main": "api/server.js",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev": "node --watch api/server.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "resend": "^4.0.1"
+  }
+}

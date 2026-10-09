@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Referral</title>
+<style>
+  :root {
+    --bg: #f3f8f6; --card: #ffffff; --ink: #10231d; --muted: #5b6f68;
+    --green: #26a17b; --green-dark: #1c7e60; --line: #d5e4de; --err: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0c1613; --card: #12211c; --ink: #e8f3ef; --muted: #8fa89f; --line: #23382f; --err: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px;
+         background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line);
+         border-radius: 14px; padding: 28px; }
+  h1 { margin: 0 0 4px; font-size: 1.4rem; }
+  p.sub { margin: 0 0 22px; color: var(--muted); }
+  label { display: block; font-weight: 600; margin: 14px 0 6px; }
+  input { width: 100%; padding: 12px 14px; font: inherit; color: inherit; background: transparent;
+          border: 1px solid var(--line); border-radius: 8px; }
+  input:focus { outline: 2px solid var(--green); outline-offset: 1px; }
+  button { width: 100%; margin-top: 20px; padding: 12px; font: inherit; font-weight: 600; color: #fff;
+           background: var(--green); border: 0; border-radius: 8px; cursor: pointer; }
+  button:hover { background: var(--green-dark); }
+  button:disabled { opacity: .6; cursor: wait; }
+  .msg { min-height: 1.4em; margin-top: 12px; color: var(--err); font-size: .92rem; }
+  .done { text-align: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="step1">
+    <h1>Enter your referral code</h1>
+    <p class="sub">Use the code you were given to continue.</p>
+    <form id="codeForm" novalidate>
+      <label for="code">Referral code</label>
+      <input id="code" name="code" autocomplete="off" required>
+      <button type="submit">Continue</button>
+      <div class="msg" role="alert"></div>
+    </form>
+  </section>
+
+  <section id="step2" hidden>
+    <h1>Your details</h1>
+    <p class="sub">Code accepted. Tell us who you are.</p>
+    <form id="detailsForm" novalidate>
+      <label for="name">Name</label>
+      <input id="name" name="name" autocomplete="name" required>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required>
+      <button type="submit">Submit</button>
+      <div class="msg" role="alert"></div>
+    </form>
+  </section>
+
+  <section id="step3" class="done" hidden>
+    <h1>You're in</h1>
+    <p class="sub">Your details were submitted.</p>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let referralCode = "";
+
+  async function post(url, body) {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Something went wrong. Try again.");
+    return data;
+  }
+
+  function wire(formId, onSubmit) {
+    const form = $(formId), btn = form.querySelector("button"), msg = form.querySelector(".msg");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.textContent = ""; btn.disabled = true;
+      try { await onSubmit(); } catch (err) { msg.textContent = err.message; }
+      btn.disabled = false;
+    });
+  }
+
+  wire("codeForm", async () => {
+    const code = $("code").value.trim();
+    if (!code) throw new Error("Enter your referral code.");
+    await post("/api/referral", { code });
+    referralCode = code;
+    $("step1").hidden = true; $("step2").hidden = false; $("name").focus();
+  });
+
+  wire("detailsForm", async () => {
+    const name = $("name").value.trim(), email = $("email").value.trim();
+    if (!name) throw new Error("Enter your name.");
+    if (!email) throw new Error("Enter your email.");
+    await post("/api/submit", { name, email, code: referralCode });
+    $("step2").hidden = true; $("step3").hidden = false;
+  });
+</script>
+</body>
+</html>
